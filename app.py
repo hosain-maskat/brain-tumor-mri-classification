@@ -6,9 +6,17 @@ Powered by Streamlit & Keras (Xception Architecture)
 import os
 import sys
 
-# Ensure Keras selects a compatible backend on Windows
+# Ensure Keras selects an available backend (Torch or TensorFlow)
 if "KERAS_BACKEND" not in os.environ:
-    os.environ["KERAS_BACKEND"] = "torch"
+    try:
+        import torch
+        os.environ["KERAS_BACKEND"] = "torch"
+    except ImportError:
+        try:
+            import tensorflow
+            os.environ["KERAS_BACKEND"] = "tensorflow"
+        except ImportError:
+            pass
 
 import time
 from pathlib import Path
@@ -17,8 +25,14 @@ from typing import Optional, Tuple, Dict, Any
 import numpy as np
 import pandas as pd
 from PIL import Image
-import plotly.express as px
 import streamlit as st
+
+# Optional Plotly import with fallback
+try:
+    import plotly.express as px
+    HAS_PLOTLY = True
+except ImportError:
+    HAS_PLOTLY = False
 
 # Configure Streamlit page settings
 st.set_page_config(
@@ -483,34 +497,44 @@ def main():
 
     df_sorted = df_probs.sort_values(by="Probability (%)", ascending=True)
 
-    fig = px.bar(
-        df_sorted,
-        x="Probability (%)",
-        y="Condition",
-        orientation="h",
-        text="Probability (%)",
-        color="Condition",
-        color_discrete_map={
-            CLASS_DETAILS[c]["display_name"]: CLASS_DETAILS[c]["color"]
-            for c in CLASS_NAMES
-        },
-    )
+    if HAS_PLOTLY:
+        fig = px.bar(
+            df_sorted,
+            x="Probability (%)",
+            y="Condition",
+            orientation="h",
+            text="Probability (%)",
+            color="Condition",
+            color_discrete_map={
+                CLASS_DETAILS[c]["display_name"]: CLASS_DETAILS[c]["color"]
+                for c in CLASS_NAMES
+            },
+        )
 
-    fig.update_traces(
-        texttemplate="%{text:.2f}%",
-        textposition="outside",
-        hovertemplate="<b>%{y}</b><br>Probability: %{x:.2f}%<extra></extra>",
-    )
+        fig.update_traces(
+            texttemplate="%{text:.2f}%",
+            textposition="outside",
+            hovertemplate="<b>%{y}</b><br>Probability: %{x:.2f}%<extra></extra>",
+        )
 
-    fig.update_layout(
-        xaxis=dict(range=[0, 105], title="Probability Score (%)", showgrid=True),
-        yaxis=dict(title=""),
-        height=280,
-        margin=dict(l=10, r=20, t=10, b=10),
-        showlegend=False,
-    )
+        fig.update_layout(
+            xaxis=dict(range=[0, 105], title="Probability Score (%)", showgrid=True),
+            yaxis=dict(title=""),
+            height=280,
+            margin=dict(l=10, r=20, t=10, b=10),
+            showlegend=False,
+        )
 
-    st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, use_container_width=True)
+    else:
+        # High quality native Streamlit visual fallback
+        for _, row in df_probs.iterrows():
+            col_lbl, col_bar = st.columns([1, 3])
+            with col_lbl:
+                st.markdown(f"**{row['Condition']}**")
+            with col_bar:
+                score = float(row['Raw Score'])
+                st.progress(min(max(score, 0.0), 1.0), text=f"{row['Probability (%)']:.2f}%")
 
     # Detailed Probability Table
     with st.expander("📊 View Detailed Probability Scores"):
